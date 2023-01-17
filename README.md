@@ -1,3 +1,3 @@
 # tinyrotary
 
-makin a rotary encoder i2c peripheral thingy
+making a rotary encoder i2c peripheral thingy

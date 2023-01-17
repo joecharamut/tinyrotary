@@ -88,6 +88,5 @@ int main() {
   while (1) {
     set_sleep_mode(SLEEP_MODE_IDLE);
     sleep_mode();
-    // tws_delay(100);
   }
 }
