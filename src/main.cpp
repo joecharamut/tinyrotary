@@ -148,7 +148,11 @@ ISR(PORTA_PORT_vect) {
 }
 
 ISR(TWI0_TWIS_vect) {
-
+  if (TWI0.SSTATUS & TWI_DIR_bm) {
+    // DIR = 1: write operation
+  } else {
+    // DIR = 0: read operation
+  }
 }
 
 int main() {
@@ -174,21 +178,23 @@ int main() {
   PORTA.PIN7CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 
   // setup i2c
-  // TWI0.SADDR = config.i2cAddress << 1;
+  // set device address
+  TWI0.SADDR = config.i2cAddress << 1;
+  // configure peripheral
+  TWI0.SCTRLA = 0
+    | TWI_DIEN_bm     // data interrupt enable 
+    | TWI_APIEN_bm    // address interrupt enable
+    // | TWI_PIEN_bm     // no stop interrupt
+    // | TWI_PMEN_bm     // no promiscuious mode
+    | TWI_SMEN_bm     // smart mode enable
+    | TWI_ENABLE_bm;  // enable
+
   // TinyWireS.begin(I2C_ADDRESS);
   // TinyWireS.onReceive(onReceive);
   // TinyWireS.onRequest(onRequest);
 
-  // enable pin change interrupt
-  // GIMSK |= _BV(PCIE);
-  // enable pin change interrupt on all encoder pins
-  // PCMSK |= _BV(PCINT3) | _BV(PCINT4) | _BV(PCINT1);
-
-  // disable some peripherals to reduce power
-  // PRR |= _BV(PRTIM0) | _BV(PRTIM1) | _BV(PRADC);
-
   // enable interrupts
-  // sei();
+  sei();
 
   // loop doing nothing
   while (1) {
