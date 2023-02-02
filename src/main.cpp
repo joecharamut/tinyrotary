@@ -6,6 +6,8 @@
 
 #include <avr/wdt.h>
 
+#include "Config.h"
+
 #define __packed __attribute__((packed))
 #define __noreturn __attribute__((noreturn))
 #define __force_inline inline __attribute__((always_inline))
@@ -15,49 +17,12 @@ void __noreturn avr_reset() {
   while (1);
 }
 
-struct __packed UserRowConfig {
-  uint8_t i2cAddress;
-};
-static_assert(sizeof(UserRowConfig) < USER_SIGNATURES_SIZE);
-
-UserRowConfig config;
-
-void loadConfig() {
-  memcpy(&config, (void*)USER_SIGNATURES_START, sizeof(config));
-}
-
-void writeConfig() {
-  // store prev interrupt state
-  uint8_t interruptEnable = SREG & _BV(SREG_I);
-  
-  // wait while NVMCTRL is busy
-  do {} while (NVMCTRL.STATUS & (NVMCTRL_EEBUSY_bm|NVMCTRL_FBUSY_bm));
-  
-  // disable interrupts
-  cli();
-
-  uint8_t *dest = reinterpret_cast<uint8_t *>(USER_SIGNATURES_START);
-  uint8_t *src = reinterpret_cast<uint8_t *>(&config);
-  // write config byte-wise
-  for (uint8_t i = 0; i < sizeof(config) && i < USER_SIGNATURES_SIZE; i++) {
-    // copy byte
-    dest[i] = src[i];
-    // call for page erase/write
-    _PROTECTED_WRITE_SPM(NVMCTRL.CTRLA, NVMCTRL_CMD_PAGEERASEWRITE_gc);
-    // wait until done
-    do {} while (NVMCTRL.STATUS & (NVMCTRL_EEBUSY_bm|NVMCTRL_FBUSY_bm));
-  }
-
-  // restore interrupts if prev enabled
-  if (interruptEnable) sei();
-}
-
 #define DEFAULT_I2C_ADDRESS 0x30
 #define IS_VALID_I2C_ADDRESS(x) ((x) > 0x07 && (x) < 0x78)
 
 volatile uint8_t i2c_register;
 
-void onReceive(uint8_t howMany) {
+void onReceive(int howMany) {
   // must be at least 1 but less than 16 bytes
   if (!howMany || howMany > 16) return;
 
@@ -147,23 +112,28 @@ ISR(PORTA_PORT_vect) {
   );
 }
 
-ISR(TWI0_TWIS_vect) {
-  if (TWI0.SSTATUS & TWI_DIR_bm) {
-    // DIR = 1: write operation
-  } else {
-    // DIR = 0: read operation
-  }
-}
+// uint8_t i2c_buf;
+// ISR(TWI0_TWIS_vect) {
+//   // read address from data register
+//   i2c_buf = TWI0.SDATA;
+
+//   // check operation
+//   if (TWI0.SSTATUS & TWI_DIR_bm) {
+//     // DIR = 1: master read operation (slave write)
+//   } else {
+//     // DIR = 0: master write operation (slave read)
+//   }
+// }
 
 int main() {
   // load config data from userrow
-  loadConfig();
+  CONFIG.load();
 
   // validate saved i2c address
-  if (!IS_VALID_I2C_ADDRESS(config.i2cAddress)) {
+  if (!IS_VALID_I2C_ADDRESS(CONFIG.i2cAddress)) {
     // if invalid, write default address and reset
-    config.i2cAddress = DEFAULT_I2C_ADDRESS;
-    writeConfig();
+    CONFIG.i2cAddress = DEFAULT_I2C_ADDRESS;
+    CONFIG.save();
     avr_reset();
   }
 
@@ -179,7 +149,7 @@ int main() {
 
   // setup i2c
   // set device address
-  TWI0.SADDR = config.i2cAddress << 1;
+  TWI0.SADDR = CONFIG.i2cAddress << 1;
   // configure peripheral
   TWI0.SCTRLA = 0
     | TWI_DIEN_bm     // data interrupt enable 
