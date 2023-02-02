@@ -7,6 +7,7 @@
 #include <avr/wdt.h>
 
 #include "Config.h"
+#include "Pins.h"
 
 #define __packed __attribute__((packed))
 #define __noreturn __attribute__((noreturn))
@@ -19,31 +20,6 @@ void __noreturn avr_reset() {
 
 #define DEFAULT_I2C_ADDRESS 0x30
 #define IS_VALID_I2C_ADDRESS(x) ((x) > 0x07 && (x) < 0x78)
-
-volatile uint8_t i2c_register;
-
-void onReceive(int howMany) {
-  // must be at least 1 but less than 16 bytes
-  if (!howMany || howMany > 16) return;
-
-  // recieve register
-  // i2c_register = TinyWireS.receive();
-  howMany--;
-
-  while (howMany) {
-    // TinyWireS.receive();
-    howMany--;
-    i2c_register++;
-  }
-}
-
-void onRequest() {
-  // TinyWireS.send(encoderValue);
-}
-
-#define ENCODER_A_bm _BV(PIN7)
-#define ENCODER_B_bm _BV(PIN6)
-#define ENCODER_SW_bm _BV(PIN3)
 
 #define ENCODER_STEP_SIZE 2
 const int8_t ENCODER_STATE_TABLE[16] = {
@@ -68,7 +44,7 @@ const int8_t ENCODER_STATE_TABLE[16] = {
 volatile uint8_t encoderState;
 volatile uint8_t encoderValue;
 volatile uint8_t encoderSwitchState;
-ISR(PORTA_PORT_vect) {
+ISR(ENCODER_PORT_vect) {
   // read in current encoder state
   asm (
     /* encoderState <<= 2 */
@@ -92,24 +68,46 @@ ISR(PORTA_PORT_vect) {
     "sbrc __tmp_reg__, 7\n\t"
       "bld %[encState], 1\n\t"
     
-    : [encState] "+a" (encoderState)
-    : [port] "I" (_SFR_IO_ADDR(VPORTA.IN))
-  );
-  
-  // TODO: get this into assembly too
-  encoderValue += ENCODER_STATE_TABLE[encoderState];
+    /* ZL += encoderState */
+    "add r30, %[encState]\n\t"
+    /* ZH += SREG.C */
+    "adc r31, __zero_reg__\n\t"
 
-  asm (
+    /* __tmp_reg__ = *((uint8_t*) Z) */
+    "ld __tmp_reg__, Z\n\t"
+    /* encoderValue += __tmp_reg__ */
+    "add %[encValue], __tmp_reg__\n\t"
+
     /* __tmp_reg__ = VPORTA.IN */
     "in __tmp_reg__, %[port]\n\t"
     /* T = __tmp_reg__(3) */
     "bst __tmp_reg__, 3\n\t"
     /* encoderSwitchState(0) = T */
     "bld %[swState], 0\n\t"
-
-    : [swState] "+a" (encoderSwitchState)
-    : [port] "I" (_SFR_IO_ADDR(VPORTA.IN))
+    
+    : [encState] "+a" (encoderState), [encValue] "+a" (encoderValue), [swState] "+a" (encoderSwitchState)
+    : [port] "I" (_SFR_IO_ADDR(VPORTA.IN)), [stateTable] "z" (ENCODER_STATE_TABLE)
   );
+}
+
+volatile uint8_t i2c_register;
+void onReceive(int howMany) {
+  // must be at least 1 but less than 16 bytes
+  if (!howMany || howMany > 16) return;
+
+  // recieve register
+  // i2c_register = TinyWireS.receive();
+  howMany--;
+
+  while (howMany) {
+    // TinyWireS.receive();
+    howMany--;
+    i2c_register++;
+  }
+}
+
+void onRequest() {
+  // TinyWireS.send(encoderValue);
 }
 
 // uint8_t i2c_buf;
@@ -125,6 +123,8 @@ ISR(PORTA_PORT_vect) {
 //   }
 // }
 
+
+
 int main() {
   // load config data from userrow
   CONFIG.load();
@@ -138,14 +138,12 @@ int main() {
   }
 
   // setup pins as input
-  // encoder pin A on PA7/pin 3
-  // encoder pin B on PA6/pin 2
-  // encoder click on PA3/pin 7
-  PORTA.DIRCLR = _BV(PIN3) | _BV(PIN6) | _BV(PIN7);
+  ENCODER_PORT.DIRCLR = ENCODER_A_bm | ENCODER_B_bm | ENCODER_S_bm;
+
   // enable pullup resistors and interrupt on both edges
-  PORTA.PIN3CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  PORTA.PIN6CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
-  PORTA.PIN7CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  ENCODER_PORT.PIN_A_CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  ENCODER_PORT.PIN_B_CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
+  ENCODER_PORT.PIN_S_CTRL = PORT_PULLUPEN_bm | PORT_ISC_BOTHEDGES_gc;
 
   // setup i2c
   // set device address
@@ -158,10 +156,6 @@ int main() {
     // | TWI_PMEN_bm     // no promiscuious mode
     | TWI_SMEN_bm     // smart mode enable
     | TWI_ENABLE_bm;  // enable
-
-  // TinyWireS.begin(I2C_ADDRESS);
-  // TinyWireS.onReceive(onReceive);
-  // TinyWireS.onRequest(onRequest);
 
   // enable interrupts
   sei();
