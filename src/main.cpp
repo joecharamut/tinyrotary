@@ -110,20 +110,22 @@ void onRequest() {
   // TinyWireS.send(encoderValue);
 }
 
-// uint8_t i2c_buf;
-// ISR(TWI0_TWIS_vect) {
-//   // read address from data register
-//   i2c_buf = TWI0.SDATA;
+uint8_t i2c_buf;
+ISR(TWI0_TWIS_vect) {
+  // read address from data register
+  i2c_buf = TWI0.SDATA;
 
-//   // check operation
-//   if (TWI0.SSTATUS & TWI_DIR_bm) {
-//     // DIR = 1: master read operation (slave write)
-//   } else {
-//     // DIR = 0: master write operation (slave read)
-//   }
-// }
+  // check operation
+  if (TWI0.SSTATUS & TWI_DIR_bm) {
+    // if direction bit set, bus controller trying to read data
+    // need to reply with something
+    // TODO: configurable whether to pack switch state into encoder position?
 
-
+  } else {
+    // dir bit clear: bus controller trying to write data
+    
+  }
+}
 
 int main() {
   // load config data from userrow
