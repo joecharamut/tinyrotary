@@ -9,6 +9,9 @@
 #include "Config.h"
 #include "Pins.h"
 
+#include <Arduino.h>
+#include <Wire.h>
+
 #define __packed __attribute__((packed))
 #define __noreturn __attribute__((noreturn))
 #define __force_inline inline __attribute__((always_inline))
@@ -44,7 +47,9 @@ const int8_t ENCODER_STATE_TABLE[16] = {
 volatile uint8_t encoderState;
 volatile uint8_t encoderValue;
 volatile uint8_t encoderSwitchState;
-ISR(ENCODER_PORT_vect) {
+ISR(PORTA_PORT_vect) {
+  // clear int flags
+  VPORTA.INTFLAGS = ENCODER_A_bm | ENCODER_B_bm | ENCODER_S_bm;
   // read in current encoder state
   asm (
     /* encoderState <<= 2 */
@@ -108,36 +113,46 @@ void onReceive(int howMany) {
 
 void onRequest() {
   // TinyWireS.send(encoderValue);
+  Wire.write(encoderValue);
+}
+
+void i2cRequest() {
+
+}
+
+void i2cReceive() {
+
 }
 
 uint8_t i2c_buf;
-ISR(TWI0_TWIS_vect) {
-  // read address from data register
-  i2c_buf = TWI0.SDATA;
+// ISR(TWI0_TWIS_vect) {
+//   // read address from data register
+//   i2c_buf = TWI0.SDATA;
 
-  // check operation
-  if (TWI0.SSTATUS & TWI_DIR_bm) {
-    // if direction bit set, bus controller trying to read data
-    // need to reply with something
-    // TODO: configurable whether to pack switch state into encoder position?
-
-  } else {
-    // dir bit clear: bus controller trying to write data
+//   // check operation
+//   if (TWI0.SSTATUS & TWI_DIR_bm) {
+//     // if direction bit set, bus controller trying to read data
+//     // need to reply with something
+//     // TODO: configurable whether to pack switch state into encoder position?
+//     TWI0.SDATA = 0;
+//     TWI0.SCTRLB = TWI_SCMD_COMPTRANS_gc;
+//   } else {
+//     // dir bit clear: bus controller trying to write data
     
-  }
-}
+//   }
+// }
 
 int main() {
   // load config data from userrow
-  CONFIG.load();
+  // CONFIG.load();
 
   // validate saved i2c address
-  if (!IS_VALID_I2C_ADDRESS(CONFIG.i2cAddress)) {
-    // if invalid, write default address and reset
-    CONFIG.i2cAddress = DEFAULT_I2C_ADDRESS;
-    CONFIG.save();
-    avr_reset();
-  }
+  // if (!IS_VALID_I2C_ADDRESS(CONFIG.i2cAddress)) {
+  //   // if invalid, write default address and reset
+  //   CONFIG.i2cAddress = DEFAULT_I2C_ADDRESS;
+  //   CONFIG.save();
+  //   avr_reset();
+  // }
 
   // setup pins as input
   ENCODER_PORT.DIRCLR = ENCODER_A_bm | ENCODER_B_bm | ENCODER_S_bm;
@@ -149,15 +164,19 @@ int main() {
 
   // setup i2c
   // set device address
-  TWI0.SADDR = CONFIG.i2cAddress << 1;
-  // configure peripheral
-  TWI0.SCTRLA = 0
-    | TWI_DIEN_bm     // data interrupt enable 
-    | TWI_APIEN_bm    // address interrupt enable
-    // | TWI_PIEN_bm     // no stop interrupt
-    // | TWI_PMEN_bm     // no promiscuious mode
-    | TWI_SMEN_bm     // smart mode enable
-    | TWI_ENABLE_bm;  // enable
+  // TWI0.SADDR = DEFAULT_I2C_ADDRESS << 1;
+  // // configure peripheral
+  // TWI0.SCTRLA = 0
+  //   | TWI_DIEN_bm     // data interrupt enable 
+  //   | TWI_APIEN_bm    // address interrupt enable
+  //   // | TWI_PIEN_bm     // no stop interrupt
+  //   // | TWI_PMEN_bm     // no promiscuious mode
+  //   | TWI_SMEN_bm     // smart mode enable
+  //   | TWI_ENABLE_bm;  // enable
+
+  Wire.onReceive(onReceive);
+  Wire.onRequest(onRequest);
+  Wire.begin(DEFAULT_I2C_ADDRESS);
 
   // enable interrupts
   sei();
